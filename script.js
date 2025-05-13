@@ -64,6 +64,41 @@ function initEventListeners() {
             tg.close();
         });
     }
+
+    // Слушаем сообщения от WebView YooKassa
+    window.addEventListener('message', function(event) {
+        console.log('Получено сообщение от WebView:', event.data);
+        
+        // Обрабатываем только сообщения от YooKassa
+        if (event.data && event.data.type && event.data.type.startsWith('yookassa')) {
+            console.log('Получено сообщение от YooKassa:', event.data);
+            
+            // Обработка успешного платежа
+            if (event.data.type === 'yookassa.success' || 
+                (event.data.type === 'yookassa.status' && event.data.status === 'succeeded')) {
+                handleSuccessfulPayment(event.data.orderId);
+            }
+        }
+    });
+}
+
+// Функция для обработки успешного платежа
+function handleSuccessfulPayment(orderId) {
+    console.log('Обработка успешного платежа:', orderId);
+    
+    // Закрываем модальное окно с формой оплаты
+    const paymentModal = document.getElementById('paymentModal');
+    if (paymentModal) {
+        paymentModal.classList.add('hidden');
+    }
+    
+    // Показываем модальное окно успешной оплаты
+    showSuccessModal();
+    
+    // Останавливаем любые запущенные проверки статуса
+    if (window.statusCheckInterval) {
+        clearInterval(window.statusCheckInterval);
+    }
 }
 
 // Создание карточки тарифного плана
@@ -169,6 +204,11 @@ async function initPaymentWidget(token, isTestMode, orderId) {
     const closePaymentBtn = document.getElementById('closePayment');
     closePaymentBtn.addEventListener('click', () => {
         paymentModal.classList.add('hidden');
+        
+        // Останавливаем любые запущенные проверки статуса
+        if (window.statusCheckInterval) {
+            clearInterval(window.statusCheckInterval);
+        }
     });
     
     if (isTestMode) {
@@ -258,9 +298,15 @@ async function initPaymentWidget(token, isTestMode, orderId) {
             const yooKassaWidget = new YooMoneyCheckoutWidget({
                 confirmation_token: token,
                 return_url: window.location.href,
+                embedded_3ds: true,
                 error_callback: function(error) {
                     console.error('Ошибка YooKassa виджета:', error);
                     showError(`Ошибка платежного виджета: ${error.message || 'Неизвестная ошибка'}`);
+                },
+                // Добавляем обработчик успешной оплаты
+                success_callback: function(data) {
+                    console.log('Успешная оплата YooKassa:', data);
+                    handleSuccessfulPayment(orderId);
                 }
             });
             
@@ -299,11 +345,22 @@ function fallbackToTestMode(token, orderId) {
 function checkPaymentStatus(orderId) {
     console.log(`Начинаем проверку статуса платежа ${orderId}`);
     
+    // Очищаем предыдущую проверку, если она существует
+    if (window.statusCheckInterval) {
+        clearInterval(window.statusCheckInterval);
+    }
+    
     // Интервал для проверки статуса каждые 3 секунды
-    const statusCheckInterval = setInterval(async () => {
+    window.statusCheckInterval = setInterval(async () => {
         try {
             // Запрашиваем статус платежа с сервера
             const response = await fetch(`${CONFIG.apiUrl}/api/payment-status/${orderId}`);
+            
+            if (!response.ok) {
+                console.error('Ошибка при запросе статуса платежа:', response.status);
+                return;
+            }
+            
             const statusData = await response.json();
             
             console.log(`Статус платежа ${orderId}:`, statusData);
@@ -311,7 +368,8 @@ function checkPaymentStatus(orderId) {
             // Если платеж успешно завершен
             if (statusData.status === 'succeeded') {
                 // Останавливаем проверку статуса
-                clearInterval(statusCheckInterval);
+                clearInterval(window.statusCheckInterval);
+                window.statusCheckInterval = null;
                 
                 // Закрываем модальное окно с формой оплаты
                 document.getElementById('paymentModal').classList.add('hidden');
@@ -323,7 +381,8 @@ function checkPaymentStatus(orderId) {
             // Если платеж отменен или произошла ошибка
             if (statusData.status === 'canceled') {
                 // Останавливаем проверку статуса
-                clearInterval(statusCheckInterval);
+                clearInterval(window.statusCheckInterval);
+                window.statusCheckInterval = null;
                 
                 // Показываем сообщение об ошибке
                 showError('Платеж был отменен');
@@ -335,8 +394,11 @@ function checkPaymentStatus(orderId) {
     
     // Останавливаем проверку через 5 минут (300000 мс) для избежания бесконечной проверки
     setTimeout(() => {
-        clearInterval(statusCheckInterval);
-        console.log(`Проверка статуса платежа ${orderId} остановлена по таймауту`);
+        if (window.statusCheckInterval) {
+            clearInterval(window.statusCheckInterval);
+            window.statusCheckInterval = null;
+            console.log(`Проверка статуса платежа ${orderId} остановлена по таймауту`);
+        }
     }, 300000);
 }
 
