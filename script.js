@@ -85,20 +85,79 @@ function initEventListeners() {
             tg.close();
         });
     }
-
-    // Слушаем сообщения от WebView YooKassa
-    window.addEventListener('message', function(event) {
-        console.log('Получено сообщение от WebView:', event.data);
-        
-        // Обрабатываем только сообщения от YooKassa
-        if (event.data && event.data.type && event.data.type.startsWith('yookassa')) {
-            console.log('Получено сообщение от YooKassa:', event.data);
-            
-            // Обработка успешного платежа
-            if (event.data.type === 'yookassa.success' || 
-                (event.data.type === 'yookassa.status' && event.data.status === 'succeeded')) {
-                handleSuccessfulPayment(event.data.orderId || currentOrderId);
+    
+    // Добавляем обработчик для кнопки проверки платежа
+    const checkPaymentButton = document.getElementById('checkPaymentButton');
+    if (checkPaymentButton) {
+        checkPaymentButton.addEventListener('click', () => {
+            console.log('Ручная проверка статуса платежа');
+            // Получаем текущий orderId
+            if (currentOrderId) {
+                // Изменяем текст кнопки для обратной связи
+                checkPaymentButton.textContent = 'Проверяем статус платежа...';
+                checkPaymentButton.disabled = true;
+                
+                // Пытаемся проверить статус платежа
+                forceCheckPaymentStatus(currentOrderId).then(isSuccess => {
+                    if (!isSuccess) {
+                        // Если не удалось подтвердить платеж автоматически, спрашиваем пользователя
+                        if (confirm('Не удалось автоматически определить статус платежа. Если вы уверены, что оплата прошла успешно, нажмите OK для активации подписки.')) {
+                            handleSuccessfulPayment(currentOrderId);
+                        } else {
+                            // Возвращаем кнопку в исходное состояние
+                            checkPaymentButton.textContent = 'Я уже оплатил, но не вижу подтверждения';
+                            checkPaymentButton.disabled = false;
+                        }
+                    }
+                    // Если isSuccess = true, то handleSuccessfulPayment уже будет вызван в forceCheckPaymentStatus
+                });
+            } else {
+                alert('Не удалось определить идентификатор текущего платежа.');
             }
+        });
+    }
+
+    // Глобальный обработчик для перехвата сообщений от YooKassa
+    window.addEventListener('message', function(event) {
+        try {
+            console.log('Получено сообщение от window.message:', event.data);
+            
+            // Проверяем на наличие данных от YooKassa
+            if (event.data && typeof event.data === 'object') {
+                // Различные шаблоны данных, которые могут прийти от YooKassa
+                if (
+                    (event.data.type && event.data.type.startsWith('yookassa')) ||
+                    (event.data.source && event.data.source === 'yookassa-checkout-widget') ||
+                    (event.data.status && (event.data.status === 'success' || event.data.status === 'succeeded'))
+                ) {
+                    console.log('Обнаружено сообщение об оплате:', event.data);
+                    
+                    // Получаем orderId из сообщения или используем текущий
+                    const messageOrderId = 
+                        event.data.orderId || 
+                        event.data.order_id || 
+                        event.data.paymentId || 
+                        event.data.payment_id || 
+                        currentOrderId;
+                    
+                    if (messageOrderId) {
+                        // Проверяем, действительно ли платеж успешен
+                        forceCheckPaymentStatus(messageOrderId).then(isSuccess => {
+                            if (isSuccess) {
+                                // Платеж успешен - показываем сообщение
+                                handleSuccessfulPayment(messageOrderId);
+                            } else {
+                                // Дополнительно проверяем, вдруг статус еще не обновился на сервере
+                                setTimeout(() => {
+                                    forceCheckPaymentStatus(messageOrderId);
+                                }, 2000);
+                            }
+                        });
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Ошибка при обработке сообщения window:', error);
         }
     });
     
@@ -145,19 +204,33 @@ function handleSuccessfulPayment(orderId) {
     // Скрываем индикатор загрузки
     hideLoader();
     
-    // Показываем модальное окно успешной оплаты
-    showSuccessModal();
+    // Используем нативный попап Telegram вместо модального окна
+    if (tg.showPopup && typeof tg.showPopup === 'function') {
+        // Показываем попап через Telegram Web App API
+        tg.showPopup({
+            title: 'Оплата успешна!',
+            message: 'Ваша подписка успешно активирована',
+            buttons: [{ type: 'close' }]
+        }, function() {
+            // После закрытия попапа закрываем мини-приложение
+            tg.close();
+        });
+    } else {
+        // Запасной вариант - показываем наше модальное окно
+        showSuccessModal();
+        
+        // Показываем кнопку Закрыть в нижней части экрана
+        tg.MainButton.setText('ЗАКРЫТЬ');
+        tg.MainButton.show();
+        tg.MainButton.onClick(() => {
+            tg.close();
+        });
+    }
     
-    // Скрываем кнопку Назад и добавляем кнопку Закрыть
+    // Скрываем кнопку Назад
     if (tg.BackButton) {
         tg.BackButton.hide();
     }
-    tg.MainButton.setText('Закрыть');
-    tg.MainButton.show();
-    tg.MainButton.onClick(() => {
-        document.getElementById('successModal').classList.add('hidden');
-        tg.close();
-    });
 }
 
 // Создание карточки тарифного плана
@@ -353,10 +426,9 @@ async function initPaymentWidget(token, isTestMode, orderId) {
                         }
                     } catch (error) {
                         console.error('Ошибка при тестовой оплате:', error);
-                        showError('Не удалось выполнить тестовую оплату');
-                    } finally {
                         hideLoader();
                         document.getElementById('testPayButton').disabled = false;
+                        showError('Не удалось выполнить тестовую оплату');
                     }
                 }, 1500); // Задержка для имитации процесса оплаты
             } catch (error) {
@@ -395,7 +467,7 @@ async function initPaymentWidget(token, isTestMode, orderId) {
                     console.log('Виджет YooKassa успешно отрисован');
                     
                     // Добавляем обработчики для iframe, чтобы отслеживать изменения в форме
-                    const iframes = document.querySelectorAll('iframe');
+                    const iframes = document.querySelectorAll('#paymentFormContainer iframe');
                     iframes.forEach(iframe => {
                         // Добавляем класс для стилизации при необходимости
                         iframe.classList.add('yookassa-iframe');
@@ -408,10 +480,25 @@ async function initPaymentWidget(token, isTestMode, orderId) {
                         } catch (err) {
                             console.log('Не удалось добавить обработчик к iframe (ожидаемо из-за Same-Origin Policy)');
                         }
+                        
+                        // Отслеживаем изменения в iframe для определения оплаты
+                        try {
+                            // Попытка отловить навигацию внутри iframe
+                            iframe.addEventListener('load', () => {
+                                console.log('Iframe загрузил новое содержимое, проверяем статус платежа');
+                                // Проверяем платеж дополнительно при каждой перезагрузке iframe
+                                forceCheckPaymentStatus(orderId);
+                            });
+                        } catch (err) {
+                            console.log('Не удалось добавить обработчик load к iframe');
+                        }
                     });
                     
                     // Запускаем периодическую проверку статуса платежа
                     checkPaymentStatus(orderId);
+                    
+                    // Дополнительно устанавливаем таймеры проверки платежа
+                    setupAdditionalPaymentChecks(orderId);
                 })
                 .catch(err => {
                     console.error('Ошибка при отрисовке виджета YooKassa:', err);
@@ -511,6 +598,73 @@ function checkPaymentStatus(orderId) {
             }
         }
     }, 180000);
+}
+
+// Установка дополнительных проверок статуса платежа
+function setupAdditionalPaymentChecks(orderId) {
+    // Проверка после определенных интервалов, когда пользователь может уже оплатить
+    const checkPoints = [
+        15000, // через 15 секунд
+        30000, // через 30 секунд
+        60000  // через 60 секунд
+    ];
+    
+    checkPoints.forEach(delay => {
+        setTimeout(() => {
+            // Проверяем, что модальное окно всё ещё открыто и платеж не обработан
+            const paymentModal = document.getElementById('paymentModal');
+            const successModal = document.getElementById('successModal');
+            
+            if (paymentModal && 
+                !paymentModal.classList.contains('hidden') && 
+                successModal && 
+                successModal.classList.contains('hidden')) {
+                console.log(`Проверка статуса платежа ${orderId} по таймеру ${delay}ms`);
+                forceCheckPaymentStatus(orderId);
+            }
+        }, delay);
+    });
+    
+    // Следим за действиями пользователя для определения возможного возврата из платежной формы
+    document.addEventListener('visibilitychange', function() {
+        if (!document.hidden) {
+            console.log('Страница стала видимой - возможно, пользователь вернулся из платежной формы');
+            const paymentModal = document.getElementById('paymentModal');
+            if (paymentModal && !paymentModal.classList.contains('hidden')) {
+                forceCheckPaymentStatus(orderId);
+            }
+        }
+    });
+}
+
+// Принудительная проверка статуса платежа
+async function forceCheckPaymentStatus(orderId) {
+    try {
+        console.log(`Принудительная проверка статуса платежа: ${orderId}`);
+        
+        // Запрашиваем статус платежа с сервера
+        const response = await fetch(`${CONFIG.apiUrl}/api/payment-status/${orderId}`);
+        
+        if (!response.ok) {
+            console.error('Ошибка при запросе статуса платежа:', response.status);
+            return;
+        }
+        
+        const statusData = await response.json();
+        
+        console.log(`Получен статус платежа ${orderId}:`, statusData);
+        
+        // Если платеж успешно завершен
+        if (statusData.status === 'succeeded') {
+            console.log('Обнаружен успешный платеж при принудительной проверке');
+            handleSuccessfulPayment(orderId);
+            return true;
+        }
+    } catch (error) {
+        console.error('Ошибка при принудительной проверке статуса платежа:', error);
+    }
+    
+    return false;
 }
 
 // Показать модальное окно успешной оплаты
