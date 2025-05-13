@@ -1,0 +1,32 @@
+{
+  "name": "yookassa-monetization",
+  "version": "1.0.0",
+  "description": "Интеграция с платежной системой ЮKassa для монетизации Telegram бота",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "webhook": "node webhook-server.js",
+    "dev": "nodemon server.js",
+    "webhook-dev": "nodemon webhook-server.js"
+  },
+  "keywords": [
+    "yookassa",
+    "юkassa",
+    "telegram",
+    "payment",
+    "webhook"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "body-parser": "^1.20.2",
+    "crypto": "^1.0.1",
+    "express": "^4.18.2",
+    "uuid": "^9.0.1",
+    "ws": "^8.14.2",
+    "yookassa": "^0.1.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+} 

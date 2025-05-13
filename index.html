@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Подписка на бота</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Подключаем SDK ЮKassa для встраиваемой оплаты -->
+    <script src="https://yookassa.ru/checkout-widget/v1/checkout-widget.js"></script>
+    <!-- Подключаем Telegram Mini App SDK -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        /* Стили для скрытия модального окна по умолчанию */
+        #success-modal {
+            display: none !important;
+            visibility: hidden !important;
+            opacity: 0 !important;
+        }
+        
+        /* Класс для явного отображения модального окна */
+        .modal-visible {
+            display: flex !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            z-index: 9999 !important;
+        }
+
+        /* Стили для контейнера платежной формы */
+        #payment-form-container {
+            margin: 20px 0;
+            min-height: 300px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Подписка на бота</h1>
+            <p class="welcome-message">Здравствуйте, <span id="userName">Пользователь</span>!</p>
+        </header>
+
+        <section class="subscription-info">
+            <h2>Выберите тариф</h2>
+            <p>Оформите подписку для получения полного доступа к возможностям бота</p>
+        </section>
+
+        <section id="plans" class="subscription-plans">
+            <!-- Здесь будут добавлены карточки тарифов динамически через JavaScript -->
+        </section>
+
+        <!-- Индикатор загрузки -->
+        <div id="loader" class="loader hidden">
+            <div class="spinner"></div>
+            <p>Загрузка...</p>
+        </div>
+
+        <!-- Сообщение об ошибке -->
+        <div id="errorMessage" class="error-message hidden"></div>
+
+        <!-- Модальное окно с формой оплаты -->
+        <div id="paymentModal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Оплата подписки</h2>
+                    <button id="closePayment" class="close-button">&times;</button>
+                </div>
+                <div id="paymentFormContainer" class="payment-form">
+                    <!-- Здесь будет отображена форма оплаты -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Модальное окно успешной оплаты -->
+        <div id="successModal" class="modal hidden">
+            <div class="modal-content success-content">
+                <div class="success-icon">
+                    <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="32" cy="32" r="30" stroke="#4CAF50" stroke-width="4"/>
+                        <path d="M20 32L28 40L44 24" stroke="#4CAF50" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </div>
+                <h2>Оплата успешна!</h2>
+                <p>Ваша подписка активирована.</p>
+                <button id="closeSuccess" class="button success-button">Закрыть</button>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2023 Безопасная оплата через ЮKassa</p>
+    </footer>
+
+    <script src="script.js"></script>
+    <script>
+        // Дополнительный скрипт для отладки
+        document.addEventListener('DOMContentLoaded', function() {
+            // Добавляем обработчик тестовой кнопки
+            const testButton = document.getElementById('test-modal-button');
+            if (testButton) {
+                testButton.addEventListener('click', function() {
+                    const modal = document.getElementById('success-modal');
+                    if (modal) {
+                        modal.classList.remove('hidden');
+                        modal.removeAttribute('style');
+                        modal.classList.add('modal-visible');
+                    } else {
+                        alert('Модальное окно не найдено!');
+                    }
+                });
+                
+                // Делаем кнопку видимой в режиме отладки
+                if (window.location.hostname === 'localhost') {
+                    testButton.style.display = 'block';
+                }
+            }
+        });
+    </script>
+</body>
+</html> 
