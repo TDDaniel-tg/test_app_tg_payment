@@ -198,34 +198,95 @@ button {
     padding: 24px;
     max-width: 90%;
     width: 400px;
-    max-height: 90vh;
-    overflow-y: auto;
     position: relative;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.success-content {
+    text-align: center;
+    padding: 30px 20px;
+    max-width: 90%;
+    width: 320px;
+    border-radius: 14px;
+    background-color: var(--tg-theme-bg-color, #ffffff);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
 }
 
 .modal-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 16px;
+    margin-bottom: 20px;
 }
 
 .modal-header h2 {
     margin: 0;
 }
 
-.success-content {
-    text-align: center;
-    padding: 30px 24px;
+.success-icon {
+    margin: 0 auto 20px;
+    width: 80px;
+    height: 80px;
+    animation: scale-up 0.5s ease;
 }
 
-.success-icon {
-    margin-bottom: 16px;
+@keyframes scale-up {
+    0% {
+        transform: scale(0.5);
+        opacity: 0;
+    }
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+#successModal h2 {
+    font-size: 22px;
+    margin-bottom: 15px;
+    color: var(--tg-theme-text-color, #000000);
+    animation: fade-in 0.5s ease 0.2s both;
+}
+
+#successModal p {
+    font-size: 16px;
+    margin-bottom: 25px;
+    color: var(--tg-theme-hint-color, #999999);
+    animation: fade-in 0.5s ease 0.3s both;
+}
+
+@keyframes fade-in {
+    0% {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.success-button {
+    width: 100%;
+    background-color: var(--tg-theme-button-color, #3390ec);
+    color: var(--tg-theme-button-text-color, #ffffff);
+    border-radius: 10px;
+    padding: 12px;
+    font-size: 16px;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    animation: fade-in 0.5s ease 0.4s both;
+    transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.success-button:active {
+    transform: scale(0.98);
+    background-color: var(--tg-theme-button-color, #2773c2);
 }
 
 .payment-form {
-    margin-top: 16px;
+    min-height: 200px;
 }
 
 .test-payment-form {

@@ -16,6 +16,10 @@ const PLANS = [
     { id: 'premium', name: 'Премиум', price: 999, description: 'Доступ ко всем функциям бота на 3 месяца со скидкой' }
 ];
 
+// Глобальные переменные для отслеживания платежа
+let currentOrderId = null;
+let paymentCheckActive = false;
+
 // Инициализация приложения при загрузке страницы
 document.addEventListener('DOMContentLoaded', () => {
     // Открываем Telegram WebApp (сообщаем что приложение готово)
@@ -25,9 +29,26 @@ document.addEventListener('DOMContentLoaded', () => {
     // Инициализируем интерфейс
     initUI();
     initEventListeners();
+    
+    // Проверяем параметры URL для определения статуса платежа
+    checkUrlForPaymentStatus();
 
     console.log('Telegram WebApp initialized', CONFIG.userId);
 });
+
+// Проверка URL на наличие параметров возврата от YooKassa
+function checkUrlForPaymentStatus() {
+    const orderId = getQueryParam('order_id') || getQueryParam('orderId');
+    const success = getQueryParam('success');
+    const paymentId = getQueryParam('payment_id');
+    
+    console.log('Проверка URL на статус платежа:', { orderId, success, paymentId });
+    
+    if (orderId && (success === 'true' || success === '1' || paymentId)) {
+        console.log('Обнаружен успешный платеж в URL:', orderId);
+        handleSuccessfulPayment(orderId);
+    }
+}
 
 // Инициализация основного интерфейса
 function initUI() {
@@ -76,8 +97,27 @@ function initEventListeners() {
             // Обработка успешного платежа
             if (event.data.type === 'yookassa.success' || 
                 (event.data.type === 'yookassa.status' && event.data.status === 'succeeded')) {
-                handleSuccessfulPayment(event.data.orderId);
+                handleSuccessfulPayment(event.data.orderId || currentOrderId);
             }
+        }
+    });
+    
+    // Добавляем обработчик для кнопки Назад в мини-приложении
+    tg.BackButton.onClick(() => {
+        // Если открыто модальное окно с оплатой, закрываем его
+        const paymentModal = document.getElementById('paymentModal');
+        if (paymentModal && !paymentModal.classList.contains('hidden')) {
+            paymentModal.classList.add('hidden');
+            tg.BackButton.hide();
+            return;
+        }
+        
+        // Если открыто модальное окно успеха, закрываем его и закрываем мини-приложение
+        const successModal = document.getElementById('successModal');
+        if (successModal && !successModal.classList.contains('hidden')) {
+            successModal.classList.add('hidden');
+            tg.close();
+            return;
         }
     });
 }
@@ -86,19 +126,38 @@ function initEventListeners() {
 function handleSuccessfulPayment(orderId) {
     console.log('Обработка успешного платежа:', orderId);
     
+    // Проверяем, был ли уже обработан этот платеж
+    if (document.getElementById('successModal') && 
+        !document.getElementById('successModal').classList.contains('hidden')) {
+        console.log('Платеж уже обработан, пропускаем повторное уведомление');
+        return;
+    }
+    
+    // Остановка всех проверок статуса платежа
+    stopPaymentChecks();
+    
     // Закрываем модальное окно с формой оплаты
     const paymentModal = document.getElementById('paymentModal');
     if (paymentModal) {
         paymentModal.classList.add('hidden');
     }
     
+    // Скрываем индикатор загрузки
+    hideLoader();
+    
     // Показываем модальное окно успешной оплаты
     showSuccessModal();
     
-    // Останавливаем любые запущенные проверки статуса
-    if (window.statusCheckInterval) {
-        clearInterval(window.statusCheckInterval);
+    // Скрываем кнопку Назад и добавляем кнопку Закрыть
+    if (tg.BackButton) {
+        tg.BackButton.hide();
     }
+    tg.MainButton.setText('Закрыть');
+    tg.MainButton.show();
+    tg.MainButton.onClick(() => {
+        document.getElementById('successModal').classList.add('hidden');
+        tg.close();
+    });
 }
 
 // Создание карточки тарифного плана
@@ -142,12 +201,20 @@ async function handlePlanSelection(plan) {
             throw new Error(paymentData?.error || 'Не удалось создать платеж');
         }
         
+        // Сохраняем ID заказа для отслеживания
+        currentOrderId = paymentData.orderId;
+        
         // Инициализируем платежный виджет с полученным токеном
         await initPaymentWidget(
             paymentData.confirmationToken, 
             paymentData.testMode, 
             paymentData.orderId
         );
+        
+        // Показываем кнопку Назад при открытии платежной формы
+        if (tg.BackButton) {
+            tg.BackButton.show();
+        }
     } catch (error) {
         console.error('Ошибка при создании платежа:', error);
         showError(`Не удалось создать платеж: ${error.message}`);
@@ -188,6 +255,15 @@ async function createPayment(amount, planName, userId) {
     }
 }
 
+// Остановка всех проверок статуса платежа
+function stopPaymentChecks() {
+    if (window.statusCheckInterval) {
+        clearInterval(window.statusCheckInterval);
+        window.statusCheckInterval = null;
+    }
+    paymentCheckActive = false;
+}
+
 // Инициализация платежного виджета ЮKassa
 async function initPaymentWidget(token, isTestMode, orderId) {
     console.log(`Инициализация платежного виджета. Тестовый режим: ${isTestMode}`);
@@ -206,8 +282,11 @@ async function initPaymentWidget(token, isTestMode, orderId) {
         paymentModal.classList.add('hidden');
         
         // Останавливаем любые запущенные проверки статуса
-        if (window.statusCheckInterval) {
-            clearInterval(window.statusCheckInterval);
+        stopPaymentChecks();
+        
+        // Скрываем кнопку Назад
+        if (tg.BackButton) {
+            tg.BackButton.hide();
         }
     });
     
@@ -268,7 +347,7 @@ async function initPaymentWidget(token, isTestMode, orderId) {
                             paymentModal.classList.add('hidden');
                             
                             // Показываем модальное окно успешной оплаты
-                            showSuccessModal();
+                            handleSuccessfulPayment(orderId);
                         } else {
                             throw new Error('Ошибка платежа');
                         }
@@ -297,7 +376,7 @@ async function initPaymentWidget(token, isTestMode, orderId) {
             // Инициализация виджета YooKassa
             const yooKassaWidget = new YooMoneyCheckoutWidget({
                 confirmation_token: token,
-                return_url: window.location.href,
+                return_url: window.location.href + '?orderId=' + orderId + '&success=true',
                 embedded_3ds: true,
                 error_callback: function(error) {
                     console.error('Ошибка YooKassa виджета:', error);
@@ -314,6 +393,22 @@ async function initPaymentWidget(token, isTestMode, orderId) {
             yooKassaWidget.render('paymentFormContainer')
                 .then(() => {
                     console.log('Виджет YooKassa успешно отрисован');
+                    
+                    // Добавляем обработчики для iframe, чтобы отслеживать изменения в форме
+                    const iframes = document.querySelectorAll('iframe');
+                    iframes.forEach(iframe => {
+                        // Добавляем класс для стилизации при необходимости
+                        iframe.classList.add('yookassa-iframe');
+                        
+                        // Пытаемся отследить события внутри iframe
+                        try {
+                            iframe.contentWindow.addEventListener('message', event => {
+                                console.log('Сообщение из iframe:', event.data);
+                            });
+                        } catch (err) {
+                            console.log('Не удалось добавить обработчик к iframe (ожидаемо из-за Same-Origin Policy)');
+                        }
+                    });
                     
                     // Запускаем периодическую проверку статуса платежа
                     checkPaymentStatus(orderId);
@@ -345,14 +440,28 @@ function fallbackToTestMode(token, orderId) {
 function checkPaymentStatus(orderId) {
     console.log(`Начинаем проверку статуса платежа ${orderId}`);
     
-    // Очищаем предыдущую проверку, если она существует
-    if (window.statusCheckInterval) {
-        clearInterval(window.statusCheckInterval);
+    // Проверяем, не активна ли уже проверка статуса
+    if (paymentCheckActive) {
+        console.log('Проверка статуса уже активна, пропускаем');
+        return;
     }
     
-    // Интервал для проверки статуса каждые 3 секунды
+    paymentCheckActive = true;
+    
+    // Очищаем предыдущую проверку, если она существует
+    stopPaymentChecks();
+    
+    // Интервал для проверки статуса каждые 2 секунды
     window.statusCheckInterval = setInterval(async () => {
         try {
+            // Проверяем, открыто ли еще модальное окно
+            const paymentModal = document.getElementById('paymentModal');
+            if (paymentModal && paymentModal.classList.contains('hidden')) {
+                console.log('Модальное окно платежа закрыто, останавливаем проверку статуса');
+                stopPaymentChecks();
+                return;
+            }
+            
             // Запрашиваем статус платежа с сервера
             const response = await fetch(`${CONFIG.apiUrl}/api/payment-status/${orderId}`);
             
@@ -368,21 +477,16 @@ function checkPaymentStatus(orderId) {
             // Если платеж успешно завершен
             if (statusData.status === 'succeeded') {
                 // Останавливаем проверку статуса
-                clearInterval(window.statusCheckInterval);
-                window.statusCheckInterval = null;
+                stopPaymentChecks();
                 
-                // Закрываем модальное окно с формой оплаты
-                document.getElementById('paymentModal').classList.add('hidden');
-                
-                // Показываем модальное окно успешной оплаты
-                showSuccessModal();
+                // Обрабатываем успешный платеж
+                handleSuccessfulPayment(orderId);
             }
             
             // Если платеж отменен или произошла ошибка
             if (statusData.status === 'canceled') {
                 // Останавливаем проверку статуса
-                clearInterval(window.statusCheckInterval);
-                window.statusCheckInterval = null;
+                stopPaymentChecks();
                 
                 // Показываем сообщение об ошибке
                 showError('Платеж был отменен');
@@ -390,22 +494,31 @@ function checkPaymentStatus(orderId) {
         } catch (error) {
             console.error('Ошибка при проверке статуса платежа:', error);
         }
-    }, 3000);
+    }, 2000);
     
-    // Останавливаем проверку через 5 минут (300000 мс) для избежания бесконечной проверки
+    // Останавливаем проверку через 3 минуты (180000 мс) для избежания бесконечной проверки
     setTimeout(() => {
-        if (window.statusCheckInterval) {
-            clearInterval(window.statusCheckInterval);
-            window.statusCheckInterval = null;
+        if (paymentCheckActive) {
+            stopPaymentChecks();
             console.log(`Проверка статуса платежа ${orderId} остановлена по таймауту`);
+            
+            // Если прошло 3 минуты, и мы не получили статус, показываем модальное окно с вопросом
+            const paymentModal = document.getElementById('paymentModal');
+            if (paymentModal && !paymentModal.classList.contains('hidden')) {
+                if (confirm('Не удалось получить подтверждение платежа. Если вы уже оплатили, нажмите OK, чтобы подтвердить оплату.')) {
+                    handleSuccessfulPayment(orderId);
+                }
+            }
         }
-    }, 300000);
+    }, 180000);
 }
 
 // Показать модальное окно успешной оплаты
 function showSuccessModal() {
     const successModal = document.getElementById('successModal');
-    successModal.classList.remove('hidden');
+    if (successModal) {
+        successModal.classList.remove('hidden');
+    }
 }
 
 // Показать сообщение об ошибке

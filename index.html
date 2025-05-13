@@ -30,6 +30,47 @@
             margin: 20px 0;
             min-height: 300px;
         }
+        
+        /* Стили для модального окна успеха в стиле Telegram */
+        .success-content {
+            text-align: center;
+            padding: 30px 20px !important;
+            max-width: 90% !important;
+            width: 320px !important;
+            border-radius: 14px !important;
+            background-color: var(--tg-theme-bg-color, #ffffff) !important;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2) !important;
+        }
+        
+        .success-icon {
+            margin: 0 auto 20px;
+            width: 80px;
+            height: 80px;
+        }
+        
+        #successModal h2 {
+            font-size: 22px;
+            margin-bottom: 15px;
+            color: var(--tg-theme-text-color, #000000);
+        }
+        
+        #successModal p {
+            font-size: 16px;
+            margin-bottom: 25px;
+            color: var(--tg-theme-hint-color, #999999);
+        }
+        
+        .success-button {
+            width: 100%;
+            background-color: var(--tg-theme-button-color, #3390ec) !important;
+            color: var(--tg-theme-button-text-color, #ffffff) !important;
+            border-radius: 10px !important;
+            padding: 12px !important;
+            font-size: 16px !important;
+            font-weight: 500 !important;
+            cursor: pointer;
+            border: none;
+        }
     </style>
 </head>
 <body>
@@ -74,14 +115,14 @@
         <div id="successModal" class="modal hidden">
             <div class="modal-content success-content">
                 <div class="success-icon">
-                    <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <circle cx="32" cy="32" r="30" stroke="#4CAF50" stroke-width="4"/>
-                        <path d="M20 32L28 40L44 24" stroke="#4CAF50" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+                    <svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="40" cy="40" r="36" stroke="#4CAF50" stroke-width="6"/>
+                        <path d="M26 40L35 49L54 30" stroke="#4CAF50" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
                     </svg>
                 </div>
                 <h2>Оплата успешна!</h2>
-                <p>Ваша подписка активирована.</p>
-                <button id="closeSuccess" class="button success-button">Закрыть</button>
+                <p>Ваша подписка активирована</p>
+                <button id="closeSuccess" class="success-button">Закрыть</button>
             </div>
         </div>
     </div>
