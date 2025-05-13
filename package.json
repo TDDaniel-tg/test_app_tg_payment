@@ -5,9 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "webhook": "node webhook-server.js",
-    "dev": "nodemon server.js",
-    "webhook-dev": "nodemon webhook-server.js"
+    "dev": "nodemon server.js"
   },
   "keywords": [
     "yookassa",
@@ -20,7 +18,7 @@
   "license": "MIT",
   "dependencies": {
     "body-parser": "^1.20.2",
-    "crypto": "^1.0.1",
+    "cors": "^2.8.5",
     "express": "^4.18.2",
     "uuid": "^9.0.1",
     "ws": "^8.14.2",
@@ -29,4 +27,4 @@
   "devDependencies": {
     "nodemon": "^3.0.1"
   }
-} 
+}
