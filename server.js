@@ -20,8 +20,8 @@ const orders = {};
 
 // Инициализация ЮKassa
 // ВНИМАНИЕ: В реальном приложении эти данные должны храниться в безопасном месте (env переменные)
-const shopId = '1086529'; // Ваш идентификатор магазина ЮKassa
-const secretKey = 'test_fItob0t2XOZPQETIa7npqoKf5PsxbXlrMTHV88P4WZA'; // ВАЖНО: Замените на ваш секретный ключ из личного кабинета ЮKassa
+const shopId = '1053058'; // Ваш идентификатор магазина ЮKassa
+const secretKey = 'live_Zf5IzprxpE7PWU-PGJQ7GRzLRo39oL4Wg2__QMKWZt4'; // ВАЖНО: Замените на ваш секретный ключ из личного кабинета ЮKassa
 let yooKassa = null;
 
 // Работаем с реальной библиотекой YooKassa
