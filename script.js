@@ -326,15 +326,22 @@ async function handlePlanSelection(plan) {
         // Сохраняем ID заказа для отслеживания
         currentOrderId = paymentData.orderId;
         
-        // Инициализируем платежный виджет с полученным токеном
-        await initPaymentWidget(
-            paymentData.confirmationToken, 
-            paymentData.orderId
-        );
-        
-        // Показываем кнопку Назад при открытии платежной формы
-        if (tg.BackButton) {
-            tg.BackButton.show();
+        // Обрабатываем платеж в зависимости от режима
+        if (paymentData.testMode && paymentData.redirectUrl) {
+            // В тестовом режиме перенаправляем пользователя на страницу оплаты
+            console.log('Перенаправляем на страницу оплаты:', paymentData.redirectUrl);
+            window.location.href = paymentData.redirectUrl;
+        } else {
+            // В боевом режиме инициализируем платежный виджет с полученным токеном
+            await initPaymentWidget(
+                paymentData.confirmationToken, 
+                paymentData.orderId
+            );
+            
+            // Показываем кнопку Назад при открытии платежной формы
+            if (tg.BackButton) {
+                tg.BackButton.show();
+            }
         }
     } catch (error) {
         console.error('Ошибка при создании платежа:', error);
@@ -362,6 +369,19 @@ async function createPayment(amount, planName, userId) {
     try {
         console.log(`Создание платежа: ${amount} руб., план: ${planName}, пользователь: ${userId}`);
         
+        // В боевом режиме нужен email для чека (54-ФЗ)
+        let email = "customer@example.com"; // значение по умолчанию
+        
+        // Запрашиваем email у пользователя для чека
+        try {
+            const userEmail = prompt("Введите email для получения чека:", "");
+            if (userEmail && userEmail.includes("@") && userEmail.includes(".")) {
+                email = userEmail;
+            }
+        } catch (e) {
+            console.log("Не удалось запросить email, используем значение по умолчанию");
+        }
+        
         const response = await fetch(`${CONFIG.apiUrl}/api/create-payment`, {
             method: 'POST',
             headers: {
@@ -371,7 +391,8 @@ async function createPayment(amount, planName, userId) {
                 amount: amount.toString(),
                 planName: planName,
                 userId: userId,
-                description: `Подписка "${planName}"`
+                description: `Подписка "${planName}"`,
+                email: email // Добавляем email для чека
             })
         });
         

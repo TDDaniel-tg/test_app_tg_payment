@@ -8,7 +8,7 @@ const fs = require('fs');
 const path = require('path');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 
 // Настройка CORS для запросов с фронтенда
 app.use(cors());
@@ -22,23 +22,25 @@ const orders = {};
 // ВНИМАНИЕ: В реальном приложении эти данные должны храниться в безопасном месте (env переменные)
 const shopId = '1053058'; // Ваш идентификатор магазина ЮKassa
 const secretKey = 'live_Zf5IzprxpE7PWU-PGJQ7GRzLRo39oL4Wg2__QMKWZt4'; // ВАЖНО: Замените на ваш секретный ключ из личного кабинета ЮKassa
+
+// Для боевого режима замените на данные вашего магазина:
+// const shopId = '1053058'; // Ваш идентификатор магазина ЮKassa
+//const secretKey = 'live_Zf5IzprxpE7PWU-PGJQ7GRzLRo39oL4Wg2__QMKWZt4'; // ВАЖНО: Замените на ваш секретный ключ из личного кабинета ЮKassa
+
+
 let yooKassa = null;
 
-// Режим работы (боевой режим всегда включен для production)
+// Режим работы (true - тестовый, false - боевой)
 const isTestMode = false;
 
 // Инициализация клиента ЮKassa
 try {
-    if (!isTestMode) {
-        const YooKassa = require('yookassa');
-        yooKassa = new YooKassa({
-            shopId: shopId,
-            secretKey: secretKey
-        });
-        console.log('ЮKassa клиент инициализирован');
-    } else {
-        console.log('Работаем в тестовом режиме без реальной библиотеки YooKassa');
-    }
+    const YooKassa = require('yookassa');
+    yooKassa = new YooKassa({
+        shopId: shopId,
+        secretKey: secretKey
+    });
+    console.log('ЮKassa клиент инициализирован в', isTestMode ? 'тестовом' : 'боевом', 'режиме');
 } catch (error) {
     console.error('Ошибка инициализации ЮKassa:', error);
     console.error('Установите библиотеку командой: npm install yookassa --save');
@@ -54,107 +56,158 @@ app.post('/api/create-payment', async (req, res) => {
     console.log('Получен запрос на создание платежа:', req.body);
     
     try {
-        const { amount, description, userId, planName } = req.body;
+        const { amount, description, userId, planName, email } = req.body;
 
         // Создаем безопасный fallback для userId, если он не передан
         const safeUserId = userId || `anonymous_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        
+        // Проверяем email для чека
+        const safeEmail = email && email.includes('@') ? email : 'customer@example.com';
 
         if (!amount) {
             console.error('Не указана сумма платежа:', req.body);
             return res.status(400).json({ error: 'Не указана сумма платежа' });
         }
 
-        // Если работаем с реальной ЮKassa
-        if (!isTestMode && yooKassa) {
-            try {
-                // Создаем заказ в ЮKassa
-                let idempotenceKey;
-                try {
-                    idempotenceKey = crypto.randomUUID();
-                } catch (e) {
-                    // Для совместимости со старыми версиями Node.js
-                    idempotenceKey = Math.random().toString(36).substring(2, 15) + 
-                                    Math.random().toString(36).substring(2, 15);
-                }
-                
-                console.log('Создаем платеж в ЮKassa с параметрами:', {
-                    amount, description, idempotenceKey, safeUserId
-                });
-                
-                const payment = await yooKassa.createPayment({
-                    amount: {
-                        value: amount,
-                        currency: 'RUB'
-                    },
-                    confirmation: {
-                        type: 'embedded',
-                        locale: 'ru_RU'
-                    },
-                    capture: true, // Автоматически принимать поступившие средства
-                    description: description || `Подписка ${planName || 'на бота'}`,
-                    metadata: {
-                        userId: safeUserId,
-                        planName: planName || 'Стандарт'
-                    }
-                }, idempotenceKey);
-                
-                // Сохраняем информацию о заказе
-                orders[payment.id] = {
-                    status: payment.status,
+        // Проверка доступности YooKassa API
+        if (!yooKassa) {
+            console.error('YooKassa API не инициализирован');
+            return res.status(500).json({ error: 'Сервис оплаты недоступен', details: 'API не инициализирован' });
+        }
+
+        try {
+            // Создаем заказ в ЮKassa
+            let idempotenceKey = crypto.randomUUID ? 
+                crypto.randomUUID() : 
+                Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+            
+            console.log('Создаем платеж в ЮKassa с параметрами:', {
+                amount, description, idempotenceKey, safeUserId, isTestMode, email: safeEmail
+            });
+            
+            // Настраиваем параметры платежа
+            const paymentParams = {
+                amount: {
+                    value: amount,
+                    currency: 'RUB'
+                },
+                capture: true, // Автоматически принимать поступившие средства
+                description: description || `Подписка ${planName || 'на бота'}`,
+                metadata: {
                     userId: safeUserId,
-                    amount: amount,
-                    planName: planName || 'Стандарт',
-                    createdAt: new Date()
+                    planName: planName || 'Стандарт'
+                }
+            };
+
+            // Добавляем параметр confirmation в зависимости от режима
+            if (isTestMode) {
+                // В тестовом режиме используем redirect для надежности
+                paymentParams.confirmation = {
+                    type: 'redirect',
+                    return_url: `${req.protocol}://${req.get('host')}?success=true`
+                };
+            } else {
+                // В боевом режиме используем embedded
+                paymentParams.confirmation = {
+                    type: 'embedded',
+                    locale: 'ru_RU'
                 };
                 
-                console.log('Платеж успешно создан:', payment.id);
-                console.log('Данные для встроенной оплаты:', payment.confirmation);
-                
-                // Отправляем клиенту информацию о платеже
-                return res.json({
-                    orderId: payment.id,
-                    status: payment.status,
-                    confirmationToken: payment.confirmation.confirmation_token,
-                    amount: amount,
-                    testMode: false
-                });
-            } catch (yooKassaError) {
-                console.error('Ошибка при создании платежа в ЮKassa:', yooKassaError);
-                
-                // Логируем детальную информацию об ошибке
-                console.error('Детали ошибки YooKassa:', 
-                    JSON.stringify(yooKassaError.response || yooKassaError.message || yooKassaError));
-                
-                // Проверяем специфические ошибки YooKassa
-                const errorMessage = yooKassaError.response?.description || 
-                                    yooKassaError.message || 
-                                    'Ошибка сервиса оплаты';
-                
-                // Если это ошибка авторизации, возвращаем более точное сообщение
-                if (errorMessage.includes('authentication') || 
-                    errorMessage.includes('auth') || 
-                    errorMessage.includes('unauthorized') ||
-                    yooKassaError.response?.code === 401) {
-                    return res.status(500).json({ 
-                        error: 'Ошибка авторизации в платежной системе', 
-                        details: errorMessage
-                    });
-                }
-                
-                // Если это проблема с магазином, возвращаем соответствующее сообщение
-                if (errorMessage.includes('shop') || errorMessage.includes('account')) {
-                    return res.status(500).json({ 
-                        error: 'Проблема с настройками магазина в платежной системе', 
-                        details: errorMessage
-                    });
-                }
-                
-                // Если другая ошибка, пробуем тестовый режим как запасной вариант
-                console.log('Переключаемся на тестовый режим из-за ошибки...');
-                return createTestPayment(amount, description, safeUserId, planName, res);
+                // Добавляем данные для чека (требуется по 54-ФЗ)
+                paymentParams.receipt = {
+                    customer: {
+                        email: safeEmail // Используем email от пользователя
+                    },
+                    items: [
+                        {
+                            description: `Подписка "${planName || 'Стандарт'}"`,
+                            amount: {
+                                value: amount,
+                                currency: "RUB"
+                            },
+                            vat_code: 1, // НДС 20%
+                            quantity: 1,
+                            payment_subject: "service",
+                            payment_mode: "full_payment"
+                        }
+                    ]
+                };
             }
-        } else {
-            // Тестовый режим
+            
+            // Создаем платеж
+            const payment = await yooKassa.createPayment(paymentParams, idempotenceKey);
+            
+            // Сохраняем информацию о заказе
+            orders[payment.id] = {
+                status: payment.status,
+                userId: safeUserId,
+                amount: amount,
+                planName: planName || 'Стандарт',
+                createdAt: new Date(),
+                email: safeEmail
+            };
+            
+            console.log('Платеж успешно создан:', payment.id);
+            console.log('Данные для оплаты:', payment.confirmation);
+            
+            // Подготавливаем ответ клиенту
+            const response = {
+                orderId: payment.id,
+                status: payment.status,
+                amount: amount,
+                testMode: isTestMode
+            };
+
+            // Добавляем конфирмацию в зависимости от типа
+            if (isTestMode) {
+                response.redirectUrl = payment.confirmation.confirmation_url;
+            } else {
+                response.confirmationToken = payment.confirmation.confirmation_token;
+            }
+            
+            // Отправляем клиенту информацию о платеже
+            return res.json(response);
+        } catch (yooKassaError) {
+            console.error('Ошибка при создании платежа в ЮKassa:', yooKassaError);
+            
+            // Логируем детальную информацию об ошибке
+            console.error('Детали ошибки YooKassa:', 
+                JSON.stringify(yooKassaError.response || yooKassaError.message || yooKassaError));
+            
+            // Проверяем специфические ошибки YooKassa
+            const errorMessage = yooKassaError.response?.description || 
+                                yooKassaError.message || 
+                                'Ошибка сервиса оплаты';
+            
+            // Если это ошибка авторизации, возвращаем более точное сообщение
+            if (errorMessage.includes('authentication') || 
+                errorMessage.includes('auth') || 
+                errorMessage.includes('unauthorized') ||
+                yooKassaError.response?.code === 401) {
+                return res.status(500).json({ 
+                    error: 'Ошибка авторизации в платежной системе', 
+                    details: errorMessage
+                });
+            }
+            
+            // Если это проблема с магазином, возвращаем соответствующее сообщение
+            if (errorMessage.includes('shop') || errorMessage.includes('account')) {
+                return res.status(500).json({ 
+                    error: 'Проблема с настройками магазина в платежной системе', 
+                    details: errorMessage
+                });
+            }
+            
+            // Если это проблема с чеком, возвращаем сообщение о неверных данных для чека
+            if (errorMessage.includes('receipt') || errorMessage.includes('tax')) {
+                return res.status(500).json({ 
+                    error: 'Ошибка в данных для чека', 
+                    details: errorMessage
+                });
+            }
+            
+            // Если другая ошибка, пробуем тестовый режим как запасной вариант
+            console.log('Переключаемся на тестовый режим из-за ошибки...');
             return createTestPayment(amount, description, safeUserId, planName, res);
         }
     } catch (error) {
@@ -287,8 +340,8 @@ app.get('/api/payment-status/:orderId', async (req, res) => {
     const { orderId } = req.params;
     console.log(`Проверка статуса платежа: ${orderId}`);
     
-    // Если работаем с реальной ЮKassa и orderId не из тестового режима
-    if (!isTestMode && yooKassa && !orderId.startsWith('order_')) {
+    // Если у нас есть YooKassa и orderId не из тестового режима
+    if (yooKassa && !orderId.startsWith('order_')) {
         try {
             // Получаем информацию о платеже из API ЮKassa
             const payment = await yooKassa.getPaymentInfo(orderId);
@@ -359,4 +412,5 @@ app.get('/api/debug/orders', (req, res) => {
 app.listen(PORT, () => {
     console.log(`Сервер запущен на порту ${PORT}`);
     console.log(`Откройте http://localhost:${PORT} в браузере`);
+    console.log(`Режим работы YooKassa: ${isTestMode ? 'ТЕСТОВЫЙ' : 'БОЕВОЙ'}`);
 }); 
