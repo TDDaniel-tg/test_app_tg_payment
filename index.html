@@ -91,6 +91,30 @@
         .check-payment-button:active {
             background-color: rgba(51, 144, 236, 0.1);
         }
+
+        /* Улучшенные стили для сообщений об ошибках */
+        .error-message {
+            background-color: rgba(255, 87, 87, 0.1);
+            border-left: 4px solid #ff5757;
+            color: #e41e1e;
+            padding: 12px 15px;
+            margin: 15px 0;
+            border-radius: 0 8px 8px 0;
+            font-size: 14px;
+            line-height: 1.4;
+            transition: all 0.3s ease;
+        }
+
+        /* Инструкции по оплате */
+        .payment-instructions {
+            font-size: 14px;
+            color: var(--tg-theme-hint-color, #999999);
+            margin: 10px 0;
+            padding: 10px;
+            background-color: var(--tg-theme-secondary-bg-color, #f5f5f5);
+            border-radius: 8px;
+            line-height: 1.4;
+        }
     </style>
 </head>
 <body>
@@ -124,6 +148,15 @@
                 <div class="modal-header">
                     <h2>Оплата подписки</h2>
                     <button id="closePayment" class="close-button">&times;</button>
+                </div>
+                <div class="payment-instructions">
+                    <strong>Инструкция по оплате:</strong>
+                    <ol>
+                        <li>Введите данные вашей банковской карты в форму ниже</li>
+                        <li>Нажмите кнопку "Оплатить"</li>
+                        <li>Следуйте инструкциям вашего банка для подтверждения платежа</li>
+                        <li>После успешной оплаты вы увидите уведомление об активации подписки</li>
+                    </ol>
                 </div>
                 <div id="paymentFormContainer" class="payment-form">
                     <!-- Здесь будет отображена форма оплаты -->

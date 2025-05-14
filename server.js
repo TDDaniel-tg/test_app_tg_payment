@@ -24,7 +24,7 @@ const shopId = '1053058'; // Ваш идентификатор магазина 
 const secretKey = 'live_Zf5IzprxpE7PWU-PGJQ7GRzLRo39oL4Wg2__QMKWZt4'; // ВАЖНО: Замените на ваш секретный ключ из личного кабинета ЮKassa
 let yooKassa = null;
 
-// Работаем с реальной библиотекой YooKassa
+// Режим работы (боевой режим всегда включен для production)
 const isTestMode = false;
 
 // Инициализация клиента ЮKassa
@@ -56,9 +56,12 @@ app.post('/api/create-payment', async (req, res) => {
     try {
         const { amount, description, userId, planName } = req.body;
 
-        if (!amount || !userId) {
-            console.error('Не указаны обязательные параметры:', req.body);
-            return res.status(400).json({ error: 'Не указаны обязательные параметры' });
+        // Создаем безопасный fallback для userId, если он не передан
+        const safeUserId = userId || `anonymous_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+        if (!amount) {
+            console.error('Не указана сумма платежа:', req.body);
+            return res.status(400).json({ error: 'Не указана сумма платежа' });
         }
 
         // Если работаем с реальной ЮKassa
@@ -75,7 +78,7 @@ app.post('/api/create-payment', async (req, res) => {
                 }
                 
                 console.log('Создаем платеж в ЮKassa с параметрами:', {
-                    amount, description, idempotenceKey
+                    amount, description, idempotenceKey, safeUserId
                 });
                 
                 const payment = await yooKassa.createPayment({
@@ -90,7 +93,7 @@ app.post('/api/create-payment', async (req, res) => {
                     capture: true, // Автоматически принимать поступившие средства
                     description: description || `Подписка ${planName || 'на бота'}`,
                     metadata: {
-                        userId: userId,
+                        userId: safeUserId,
                         planName: planName || 'Стандарт'
                     }
                 }, idempotenceKey);
@@ -98,7 +101,7 @@ app.post('/api/create-payment', async (req, res) => {
                 // Сохраняем информацию о заказе
                 orders[payment.id] = {
                     status: payment.status,
-                    userId: userId,
+                    userId: safeUserId,
                     amount: amount,
                     planName: planName || 'Стандарт',
                     createdAt: new Date()
@@ -118,14 +121,41 @@ app.post('/api/create-payment', async (req, res) => {
             } catch (yooKassaError) {
                 console.error('Ошибка при создании платежа в ЮKassa:', yooKassaError);
                 
-                // Если возникла ошибка с API ЮKassa, но мы хотим все равно показать интерфейс
-                // Можно вернуть тестовый режим как запасной вариант
+                // Логируем детальную информацию об ошибке
+                console.error('Детали ошибки YooKassa:', 
+                    JSON.stringify(yooKassaError.response || yooKassaError.message || yooKassaError));
+                
+                // Проверяем специфические ошибки YooKassa
+                const errorMessage = yooKassaError.response?.description || 
+                                    yooKassaError.message || 
+                                    'Ошибка сервиса оплаты';
+                
+                // Если это ошибка авторизации, возвращаем более точное сообщение
+                if (errorMessage.includes('authentication') || 
+                    errorMessage.includes('auth') || 
+                    errorMessage.includes('unauthorized') ||
+                    yooKassaError.response?.code === 401) {
+                    return res.status(500).json({ 
+                        error: 'Ошибка авторизации в платежной системе', 
+                        details: errorMessage
+                    });
+                }
+                
+                // Если это проблема с магазином, возвращаем соответствующее сообщение
+                if (errorMessage.includes('shop') || errorMessage.includes('account')) {
+                    return res.status(500).json({ 
+                        error: 'Проблема с настройками магазина в платежной системе', 
+                        details: errorMessage
+                    });
+                }
+                
+                // Если другая ошибка, пробуем тестовый режим как запасной вариант
                 console.log('Переключаемся на тестовый режим из-за ошибки...');
-                return createTestPayment(amount, description, userId, planName, res);
+                return createTestPayment(amount, description, safeUserId, planName, res);
             }
         } else {
             // Тестовый режим
-            return createTestPayment(amount, description, userId, planName, res);
+            return createTestPayment(amount, description, safeUserId, planName, res);
         }
     } catch (error) {
         console.error('Ошибка при создании платежа:', error);
@@ -145,7 +175,7 @@ function createTestPayment(amount, description, userId, planName, res) {
     }
     
     console.log('Создаем тестовый платеж с параметрами:', {
-        orderId, amount, description
+        orderId, amount, description, userId
     });
     
     // Создаем фейковый токен для тестирования
@@ -310,6 +340,19 @@ app.get('/api/payment-status/:orderId', async (req, res) => {
         console.log(`Заказ ${orderId} не найден`);
         return res.status(404).json({ error: 'Заказ не найден' });
     }
+});
+
+// Маршрут для отладки - сброс хранилища заказов
+app.get('/api/debug/reset-orders', (req, res) => {
+    console.log('Сброс хранилища заказов');
+    Object.keys(orders).forEach(key => delete orders[key]);
+    res.json({ message: 'Хранилище заказов очищено', ordersCount: Object.keys(orders).length });
+});
+
+// Маршрут для получения всех заказов (только для отладки!)
+app.get('/api/debug/orders', (req, res) => {
+    console.log('Запрос всех заказов (debug)');
+    res.json({ orders: orders, count: Object.keys(orders).length });
 });
 
 // Запуск сервера

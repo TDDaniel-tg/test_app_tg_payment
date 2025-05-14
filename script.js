@@ -4,8 +4,8 @@ const tg = window.Telegram.WebApp;
 // Основные настройки приложения
 const CONFIG = {
     apiUrl: window.location.origin, // Базовый URL для API
-    userId: tg.initDataUnsafe?.user?.id || getQueryParam('userId'),
-    userName: tg.initDataUnsafe?.user?.first_name || getQueryParam('userName'),
+    userId: null, // Будет установлен после обработки данных
+    userName: null, // Будет установлен после обработки данных
     isDev: false // Всегда отключен в боевом режиме
 };
 
@@ -26,6 +26,9 @@ document.addEventListener('DOMContentLoaded', () => {
     tg.expand();
     tg.ready();
 
+    // Получаем данные пользователя
+    initUserData();
+
     // Инициализируем интерфейс
     initUI();
     initEventListeners();
@@ -35,6 +38,38 @@ document.addEventListener('DOMContentLoaded', () => {
 
     console.log('Telegram WebApp initialized', CONFIG.userId);
 });
+
+// Инициализация данных пользователя
+function initUserData() {
+    // Пытаемся получить данные из Telegram WebApp
+    if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
+        CONFIG.userId = tg.initDataUnsafe.user.id;
+        CONFIG.userName = tg.initDataUnsafe.user.first_name;
+        console.log('Получены данные пользователя из Telegram:', CONFIG.userId, CONFIG.userName);
+    } else {
+        // Пытаемся получить из URL параметров
+        CONFIG.userId = getQueryParam('userId');
+        CONFIG.userName = getQueryParam('userName');
+        console.log('Получены данные пользователя из URL:', CONFIG.userId, CONFIG.userName);
+    }
+
+    // Если всё еще нет userId, создаем анонимный идентификатор
+    if (!CONFIG.userId) {
+        CONFIG.userId = `anonymous_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        console.log('Создан анонимный идентификатор пользователя:', CONFIG.userId);
+    }
+
+    // Если нет имени пользователя, используем дефолтное
+    if (!CONFIG.userName) {
+        CONFIG.userName = 'Пользователь';
+    }
+
+    // Логируем финальные значения
+    console.log('Финальные данные пользователя:', {
+        userId: CONFIG.userId,
+        userName: CONFIG.userName
+    });
+}
 
 // Проверка URL на наличие параметров возврата от YooKassa
 function checkUrlForPaymentStatus() {
@@ -71,6 +106,12 @@ function initUI() {
     const successModal = document.getElementById('successModal');
     if (successModal) {
         successModal.classList.add('hidden');
+    }
+
+    // Скрываем ошибки при загрузке
+    const errorElement = document.getElementById('errorMessage');
+    if (errorElement) {
+        errorElement.classList.add('hidden');
     }
 }
 
@@ -266,6 +307,14 @@ async function handlePlanSelection(plan) {
     setButtonsState(false);
     
     try {
+        // Проверяем данные пользователя перед отправкой
+        if (!CONFIG.userId) {
+            // Повторно инициализируем данные на случай, если что-то пошло не так
+            initUserData();
+        }
+        
+        console.log('Отправляем запрос на создание платежа с пользователем:', CONFIG.userId);
+        
         // Отправляем запрос на создание платежа
         const paymentData = await createPayment(plan.price, plan.name, CONFIG.userId);
         console.log('Данные платежа:', paymentData);
@@ -289,7 +338,16 @@ async function handlePlanSelection(plan) {
         }
     } catch (error) {
         console.error('Ошибка при создании платежа:', error);
-        showError(`Не удалось создать платеж: ${error.message}`);
+        
+        // Показываем детальную ошибку пользователю
+        const errorMessage = error.message || 'Не удалось создать платеж';
+        
+        showError(`Не удалось создать платеж: ${errorMessage}`);
+        
+        // Если ошибка связана с авторизацией, даем дополнительную информацию
+        if (errorMessage.includes('авторизации') || errorMessage.includes('auth')) {
+            console.log('Ошибка авторизации в платежной системе, рекомендуется проверить настройки магазина');
+        }
     } finally {
         // Скрываем индикатор загрузки
         hideLoader();
@@ -302,6 +360,8 @@ async function handlePlanSelection(plan) {
 // Функция для создания платежа на сервере
 async function createPayment(amount, planName, userId) {
     try {
+        console.log(`Создание платежа: ${amount} руб., план: ${planName}, пользователь: ${userId}`);
+        
         const response = await fetch(`${CONFIG.apiUrl}/api/create-payment`, {
             method: 'POST',
             headers: {
@@ -315,12 +375,13 @@ async function createPayment(amount, planName, userId) {
             })
         });
         
+        const responseData = await response.json();
+        
         if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || `Ошибка сервера: ${response.status}`);
+            throw new Error(responseData.error || responseData.details || `Ошибка сервера: ${response.status}`);
         }
         
-        return await response.json();
+        return responseData;
     } catch (error) {
         console.error('Ошибка при создании платежа:', error);
         throw error;
@@ -548,7 +609,7 @@ async function forceCheckPaymentStatus(orderId) {
         
         if (!response.ok) {
             console.error('Ошибка при запросе статуса платежа:', response.status);
-            return;
+            return false;
         }
         
         const statusData = await response.json();
