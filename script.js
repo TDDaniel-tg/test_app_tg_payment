@@ -11,7 +11,7 @@ const CONFIG = {
 
 // Подписки и их цены
 const PLANS = [
-    { id: 'basic', name: 'Базовый', price: 199, description: 'Доступ к основным функциям бота на 1 месяц' },
+    { id: 'basic', name: 'Базовый', price: 20, description: 'Доступ к основным функциям бота на 1 месяц' },
     { id: 'standard', name: 'Стандартный', price: 499, description: 'Доступ ко всем функциям бота на 1 месяц' },
     { id: 'premium', name: 'Премиум', price: 999, description: 'Доступ ко всем функциям бота на 3 месяца со скидкой' }
 ];
