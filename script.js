@@ -4,9 +4,9 @@ const tg = window.Telegram.WebApp;
 // Основные настройки приложения
 const CONFIG = {
     apiUrl: window.location.origin, // Базовый URL для API
-    userId: tg.initDataUnsafe?.user?.id || getQueryParam('userId') || 'test_user', // ID пользователя Telegram
-    userName: tg.initDataUnsafe?.user?.first_name || getQueryParam('userName') || 'Тестовый пользователь',
-    isDev: window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    userId: tg.initDataUnsafe?.user?.id || getQueryParam('userId'),
+    userName: tg.initDataUnsafe?.user?.first_name || getQueryParam('userName'),
+    isDev: false // Всегда отключен в боевом режиме
 };
 
 // Подписки и их цены
@@ -280,7 +280,6 @@ async function handlePlanSelection(plan) {
         // Инициализируем платежный виджет с полученным токеном
         await initPaymentWidget(
             paymentData.confirmationToken, 
-            paymentData.testMode, 
             paymentData.orderId
         );
         
@@ -338,8 +337,8 @@ function stopPaymentChecks() {
 }
 
 // Инициализация платежного виджета ЮKassa
-async function initPaymentWidget(token, isTestMode, orderId) {
-    console.log(`Инициализация платежного виджета. Тестовый режим: ${isTestMode}`);
+async function initPaymentWidget(token, orderId) {
+    console.log('Инициализация платежного виджета YooKassa');
     
     // Очищаем контейнер для виджета
     const paymentContainer = document.getElementById('paymentFormContainer');
@@ -363,164 +362,66 @@ async function initPaymentWidget(token, isTestMode, orderId) {
         }
     });
     
-    if (isTestMode) {
-        // Создаем тестовую форму оплаты
-        const testForm = document.createElement('div');
-        testForm.className = 'test-payment-form';
-        testForm.innerHTML = `
-            <h3>Тестовый режим оплаты</h3>
-            <p class="test-mode-note">Используйте следующие данные для теста:</p>
-            
-            <div class="card-form">
-                <div class="form-group">
-                    <label>Номер карты</label>
-                    <input type="text" value="4111 1111 1111 1111" readonly class="card-number" />
-                </div>
-                
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Месяц/Год</label>
-                        <input type="text" value="12/30" readonly class="card-date" />
-                    </div>
-                    <div class="form-group">
-                        <label>CVC</label>
-                        <input type="text" value="123" readonly class="card-cvc" />
-                    </div>
-                </div>
-            </div>
-            
-            <button id="testPayButton" class="pay-button">Оплатить</button>
-        `;
+    try {
+        // Проверяем наличие библиотеки YooKassa
+        if (typeof YooMoneyCheckoutWidget !== 'function') {
+            throw new Error('Библиотека YooKassa не загружена');
+        }
         
-        paymentContainer.appendChild(testForm);
-        
-        // Обработчик для тестовой оплаты
-        document.getElementById('testPayButton').addEventListener('click', async () => {
-            try {
-                // Имитируем процесс оплаты
-                showLoader();
-                document.getElementById('testPayButton').disabled = true;
-                
-                // Отображаем анимацию загрузки для имитации процесса
-                setTimeout(async () => {
-                    try {
-                        // Вызываем тестовый маршрут для имитации успешной оплаты
-                        const result = await fetch(`${CONFIG.apiUrl}/api/test-payment`, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json'
-                            },
-                            body: JSON.stringify({ orderId })
-                        }).then(res => res.json());
-                        
-                        console.log('Результат тестовой оплаты:', result);
-                        
-                        if (result.status === 'succeeded') {
-                            // Закрываем форму оплаты
-                            paymentModal.classList.add('hidden');
-                            
-                            // Показываем модальное окно успешной оплаты
-                            handleSuccessfulPayment(orderId);
-                        } else {
-                            throw new Error('Ошибка платежа');
-                        }
-                    } catch (error) {
-                        console.error('Ошибка при тестовой оплате:', error);
-                        hideLoader();
-                        document.getElementById('testPayButton').disabled = false;
-                        showError('Не удалось выполнить тестовую оплату');
-                    }
-                }, 1500); // Задержка для имитации процесса оплаты
-            } catch (error) {
-                console.error('Ошибка при тестовой оплате:', error);
-                hideLoader();
-                document.getElementById('testPayButton').disabled = false;
-                showError('Не удалось выполнить тестовую оплату');
+        // Инициализация виджета YooKassa
+        const yooKassaWidget = new YooMoneyCheckoutWidget({
+            confirmation_token: token,
+            return_url: window.location.href + '?orderId=' + orderId + '&success=true',
+            embedded_3ds: true,
+            error_callback: function(error) {
+                console.error('Ошибка YooKassa виджета:', error);
+                showError(`Ошибка платежного виджета: ${error.message || 'Неизвестная ошибка'}`);
+            },
+            // Добавляем обработчик успешной оплаты
+            success_callback: function(data) {
+                console.log('Успешная оплата YooKassa:', data);
+                handleSuccessfulPayment(orderId);
             }
         });
-    } else {
-        try {
-            // Проверяем наличие библиотеки YooKassa
-            if (typeof YooMoneyCheckoutWidget !== 'function') {
-                throw new Error('Библиотека YooKassa не загружена');
-            }
-            
-            // Инициализация виджета YooKassa
-            const yooKassaWidget = new YooMoneyCheckoutWidget({
-                confirmation_token: token,
-                return_url: window.location.href + '?orderId=' + orderId + '&success=true',
-                embedded_3ds: true,
-                error_callback: function(error) {
-                    console.error('Ошибка YooKassa виджета:', error);
-                    showError(`Ошибка платежного виджета: ${error.message || 'Неизвестная ошибка'}`);
-                },
-                // Добавляем обработчик успешной оплаты
-                success_callback: function(data) {
-                    console.log('Успешная оплата YooKassa:', data);
-                    handleSuccessfulPayment(orderId);
-                }
-            });
-            
-            // Отрисовка виджета
-            yooKassaWidget.render('paymentFormContainer')
-                .then(() => {
-                    console.log('Виджет YooKassa успешно отрисован');
+        
+        // Отрисовка виджета
+        yooKassaWidget.render('paymentFormContainer')
+            .then(() => {
+                console.log('Виджет YooKassa успешно отрисован');
+                
+                // Добавляем обработчики для iframe, чтобы отслеживать изменения в форме
+                const iframes = document.querySelectorAll('#paymentFormContainer iframe');
+                iframes.forEach(iframe => {
+                    // Добавляем класс для стилизации при необходимости
+                    iframe.classList.add('yookassa-iframe');
                     
-                    // Добавляем обработчики для iframe, чтобы отслеживать изменения в форме
-                    const iframes = document.querySelectorAll('#paymentFormContainer iframe');
-                    iframes.forEach(iframe => {
-                        // Добавляем класс для стилизации при необходимости
-                        iframe.classList.add('yookassa-iframe');
-                        
-                        // Пытаемся отследить события внутри iframe
-                        try {
-                            iframe.contentWindow.addEventListener('message', event => {
-                                console.log('Сообщение из iframe:', event.data);
-                            });
-                        } catch (err) {
-                            console.log('Не удалось добавить обработчик к iframe (ожидаемо из-за Same-Origin Policy)');
-                        }
-                        
-                        // Отслеживаем изменения в iframe для определения оплаты
-                        try {
-                            // Попытка отловить навигацию внутри iframe
-                            iframe.addEventListener('load', () => {
-                                console.log('Iframe загрузил новое содержимое, проверяем статус платежа');
-                                // Проверяем платеж дополнительно при каждой перезагрузке iframe
-                                forceCheckPaymentStatus(orderId);
-                            });
-                        } catch (err) {
-                            console.log('Не удалось добавить обработчик load к iframe');
-                        }
-                    });
-                    
-                    // Запускаем периодическую проверку статуса платежа
-                    checkPaymentStatus(orderId);
-                    
-                    // Дополнительно устанавливаем таймеры проверки платежа
-                    setupAdditionalPaymentChecks(orderId);
-                })
-                .catch(err => {
-                    console.error('Ошибка при отрисовке виджета YooKassa:', err);
-                    showError(`Не удалось отобразить форму оплаты: ${err.message || 'Неизвестная ошибка'}`);
-                    
-                    // Если не удалось отрисовать виджет, показываем тестовую форму
-                    fallbackToTestMode(token, orderId);
+                    // Отслеживаем изменения в iframe для определения оплаты
+                    try {
+                        // Попытка отловить навигацию внутри iframe
+                        iframe.addEventListener('load', () => {
+                            console.log('Iframe загрузил новое содержимое, проверяем статус платежа');
+                            // Проверяем платеж дополнительно при каждой перезагрузке iframe
+                            forceCheckPaymentStatus(orderId);
+                        });
+                    } catch (err) {
+                        console.log('Не удалось добавить обработчик load к iframe');
+                    }
                 });
-        } catch (error) {
-            console.error('Ошибка инициализации виджета YooKassa:', error);
-            showError(`Ошибка инициализации платежного виджета: ${error.message}`);
-            
-            // Если есть ошибка с виджетом, показываем тестовую форму
-            fallbackToTestMode(token, orderId);
-        }
+                
+                // Запускаем периодическую проверку статуса платежа
+                checkPaymentStatus(orderId);
+                
+                // Дополнительно устанавливаем таймеры проверки платежа
+                setupAdditionalPaymentChecks(orderId);
+            })
+            .catch(err => {
+                console.error('Ошибка при отрисовке виджета YooKassa:', err);
+                showError(`Не удалось отобразить форму оплаты: ${err.message || 'Неизвестная ошибка'}`);
+            });
+    } catch (error) {
+        console.error('Ошибка инициализации виджета YooKassa:', error);
+        showError(`Ошибка инициализации платежного виджета: ${error.message}`);
     }
-}
-
-// Функция для перехода в тестовый режим при проблемах с виджетом YooKassa
-function fallbackToTestMode(token, orderId) {
-    console.log('Переход в тестовый режим из-за проблем с виджетом YooKassa');
-    initPaymentWidget(token, true, orderId);
 }
 
 // Функция для проверки статуса платежа

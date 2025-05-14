@@ -25,7 +25,7 @@ const secretKey = 'live_Zf5IzprxpE7PWU-PGJQ7GRzLRo39oL4Wg2__QMKWZt4'; // ВАЖ�
 let yooKassa = null;
 
 // Работаем с реальной библиотекой YooKassa
-const isTestMode = true;
+const isTestMode = false;
 
 // Инициализация клиента ЮKassa
 try {
